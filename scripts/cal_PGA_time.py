@@ -30,19 +30,31 @@ eq_dirs = glob.glob(home+"/"+project_name+"/waveforms/*")
 
 # sampling
 sampl = 100
+SNR = {
+        'ratio': 5.0,
+        'sta_window': 0.02, # first 2% of the whole timeseries
+        'lta_window': 1,    # 100% of the timeseries
+        }
+
+verbo = False #print out loud
 
 nev = 0
 for eq_dir in eq_dirs:
     if nev%10==0:
         print('current n=',nev)
+    '''
+    if nev<380:
+        nev+=1
+        continue
+    '''
     eq_time = eq_dir.split("/")[-1]
     eq_time_obj = UTCDateTime(eq_time)
     # get EQinfo by EQ time
     idx = T[np.abs(T-eq_time_obj.datetime)==min(np.abs(T-eq_time_obj.datetime))]
     if len(idx)!=1:
         print('=======catalog ambiguous....skip this date============')
-        print(eq_time)
-        print(cat.iloc[idx])
+        print(eq_time,idx)
+        #print(cat.iloc[idx]) 
         continue # datetime and catalog is ambiguous
     idx = idx.index[0]
     evlo = cat.iloc[idx].Lon
@@ -50,11 +62,13 @@ for eq_dir in eq_dirs:
     evdep = cat.iloc[idx].Depth
     # start dealing with stations
     net_sta_locs, d_path = analysis.get_net_sta_loc(home, project_name, eq_time)
+    nsta = nsta_drop = nsta_keep = 0
     for net_sta_loc in net_sta_locs:
         Z_file = glob.glob(home+"/"+project_name+"/waveforms/"+eq_time+"/waveforms/"+net_sta_loc+".HNZ*mseed")
         E_file = glob.glob(home+"/"+project_name+"/waveforms/"+eq_time+"/waveforms/"+net_sta_loc+".HNE*mseed")
         N_file = glob.glob(home+"/"+project_name+"/waveforms/"+eq_time+"/waveforms/"+net_sta_loc+".HNN*mseed")
         assert len(Z_file)==len(E_file)==len(N_file)==1, "E/N/Z multiple files"
+        nsta += 1
         Z = obspy.read(Z_file[0])
         E = obspy.read(E_file[0])
         N = obspy.read(N_file[0])
@@ -71,6 +85,16 @@ for eq_dir in eq_dirs:
         E.trim(starttime=eq_time_obj, endtime=eq_time_obj+300,pad=True,fill_value=0)
         N.trim(starttime=eq_time_obj, endtime=eq_time_obj+300,pad=True,fill_value=0)
         Z.trim(starttime=eq_time_obj, endtime=eq_time_obj+300,pad=True,fill_value=0)
+        Acc = (Z[0].data**2+E[0].data**2+N[0].data**2)**0.5 # accel.
+        # select by SNR threshold
+        sta = np.std(Acc[:int(len(Acc)*SNR['sta_window'])])
+        lta = np.std(Acc[:int(len(Acc)*SNR['lta_window'])])
+        if (sta==0) or (lta==0):
+            continue
+        if (lta/sta)<SNR['ratio']:
+            nsta_drop += 1
+            continue
+        nsta_keep += 1
         # PGA
         max_idx = np.argmax(Z[0].data**2+E[0].data**2+N[0].data**2)
         PGA_time = E[0].times()[max_idx]
@@ -84,12 +108,20 @@ for eq_dir in eq_dirs:
         plt.plot(dist,P,'k.',markersize=1)
         plt.plot(dist,S,'r.',markersize=1)
         plt.plot(dist,PGA_time,'m*',markersize=1)
+    # finish all stations
+    if verbo:
+        if nsta!=0:
+            print('  total of %d stations, %d keep, %d drop (%.2f %%)'%(nsta,nsta_keep,nsta_drop,(nsta_keep/nsta)*100))
+        else:
+            print('  ----dir is empty----:',home+"/"+project_name+"/waveforms/"+eq_time)
+            print('  total of %d stations, %d keep, %d drop '%(nsta,nsta_keep,nsta_drop))
+
     nev += 1
-    if nev==100:
+    if nev==1000:
         break
 
 plt.xlabel('Dist (deg)',fontsize=14)
 plt.ylabel('Time (s)',fontsize=14)
-#plt.savefig('time_pga.png')
+plt.savefig('time_pga.png')
 
 
