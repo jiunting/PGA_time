@@ -117,11 +117,11 @@ for eq_dir in eq_dirs:
             print('  total of %d stations, %d keep, %d drop '%(nsta,nsta_keep,nsta_drop))
 
     nev += 1
-    if nev==1000:
-        break
+    #if nev==1000:
+    #    break
 
 plt.xlabel('Dist (deg)',fontsize=14)
 plt.ylabel('Time (s)',fontsize=14)
-plt.savefig('time_pga.png')
+plt.savefig('time_pga_SNR5.png')
 
 
